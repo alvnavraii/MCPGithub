@@ -16,6 +16,15 @@ MCPGithub is a GitHub repository management tool integrated with the Model Conte
 - GitHub token with necessary permissions
 - Configured environment variables
 
+## Environment Variables Configuration (.env) ⚙️
+This project uses a `.env` file to manage sensitive environment variables, such as the GitHub token. The server validates the existence, readability, and content of the `.env` file before starting. If the file is missing, unreadable, empty, or the `GITHUB_TOKEN` is missing, the server will display a clear error message and will not start.
+
+### Example of a `.env` file:
+```env
+GITHUB_TOKEN=your_personal_github_token
+```
+Place the `.env` file in the root of the project (`MCPGithub/`).
+
 ## Installation 🛠️
 1. Clone the repository:
 ```bash
@@ -27,10 +36,12 @@ git clone https://github.com/alvnavraii/MCPGithub.git
 pip install -r requirements.txt
 ```
 
-3. Configure your GitHub token as an environment variable:
-```bash
-export GITHUB_TOKEN='your_token_here'
+3. Create a `.env` file in the root of the project with the following content:
+```env
+GITHUB_TOKEN=your_personal_github_token
 ```
+
+> **Note:** You no longer need to manually export the `GITHUB_TOKEN` environment variable.
 
 ## Usage 💻
 The project runs as an MCP server and provides the following tools:
@@ -61,6 +72,24 @@ The project runs as an MCP server and provides the following tools:
 - `git_commit(repo_path=".", message="First Commit")` ✔️: Commits staged changes with a message
 - `git_push(branch="test", repo_path=".", token=None, usuario=None, repo_name=None)` ⬆️: Pushes commits to remote repository
 
+## Troubleshooting and Configuration Validation ⚠️
+When starting the server, the following validations are performed:
+- 🗂️ Checks that the `.env` file exists in the project root.
+- 👁️ Ensures the `.env` file is readable.
+- 📄 Ensures the `.env` file is not empty.
+- 🛡️ Validates that the `GITHUB_TOKEN` variable is present and not empty.
+
+### Common Error Messages
+- ❗ `.env file not found at ...`: The `.env` file does not exist at the expected path.
+- ❗ `.env file is not readable at ...`: The file exists but does not have read permissions.
+- ❗ `.env file is empty`: The file exists but is empty.
+- ❗ `GITHUB_TOKEN not loaded from .env file`: The `GITHUB_TOKEN` variable is missing or empty.
+
+If you encounter any of these errors, check the existence, permissions, and content of your `.env` file.
+
+## Startup and Validation Flow ⚙️
+When running the server, it first loads and validates the `.env` file. If everything is correct, the GitHub client is initialized and the MCP server starts. If any validation error occurs, the server displays a descriptive message and will not continue execution.
+
 ## MCP Server Configuration 🔧
 
 ### Claude Desktop Configuration 🤖
@@ -69,8 +98,7 @@ The project runs as an MCP server and provides the following tools:
 ```bash
 ~/.config/Claude/claude_desktop_config.json
 ```
-
-2. Add the MCP server configuration in the `mcpServers` section:
+2. Add the MCP server configuration in the `mcpServers` section (only command and args are required):
 ```json
 {
   "mcpServers": {
@@ -78,14 +106,12 @@ The project runs as an MCP server and provides the following tools:
       "command": "/path/to/your/venv/python",
       "args": [
         "/path/to/your/project/MCPGithub/server.py"
-      ],
-      "defaultBranch": "master",
-      "username": "your-github-username",
-      "token": "your-github-token"
+      ]
     }
   }
 }
 ```
+> **Note:** All sensitive data (username, token, defaultBranch, etc.) is now managed exclusively via the `.env` file in your project root. Do not include these fields in the JSON configuration.
 
 ### Windsurf Desktop Configuration 🌊
 
@@ -93,8 +119,7 @@ The project runs as an MCP server and provides the following tools:
 ```bash
 ~/.config/Windsurf/windsurf_desktop_config.json
 ```
-
-2. Add the MCP server configuration in the `mcpServers` section:
+2. Add the MCP server configuration in the `mcpServers` section (only command and args are required):
 ```json
 {
   "mcpServers": {
@@ -102,32 +127,12 @@ The project runs as an MCP server and provides the following tools:
       "command": "/path/to/your/venv/python",
       "args": [
         "/path/to/your/project/MCPGithub/server.py"
-      ],
-      "defaultBranch": "master",
-      "username": "your-github-username",
-      "token": "your-github-token"
+      ]
     }
   }
 }
 ```
-
-### Important Configuration Notes ⚠️
-
-- Make sure to replace `/path/to/your/venv/python` with the actual path to your Python virtual environment
-- Replace `/path/to/your/project/MCPGithub/server.py` with the actual path to the server.py file
-- Replace `your-github-username` with your GitHub username
-- Replace `your-github-token` with your GitHub personal access token
-- The `defaultBranch` can be modified according to your preferences (defaults to "master")
-
-### Configuration Verification ✅
-
-To verify that the configuration has been set up correctly, you can use the `mcp_config_reader.py` script included in this project:
-
-```bash
-python mcp_config_reader.py
-```
-
-This script will show you the current configurations for both Claude and Windsurf.
+> **Note:** All credentials and configuration details are handled via the `.env` file. The JSON should only specify how to launch the MCP server.
 
 ## Security 🔒
 - Tokens are handled through environment variables
@@ -146,7 +151,7 @@ Contributions are welcome. Please make sure to:
 This project is under the MIT License. See the `LICENSE` file for more details.
 
 ## Author ✍️
-- **Alvaro Navarro** - [@alvnavraii](https://github.com/alvnavraii)
+- **Rafael Álvarez Navarrete** - [@alvnavraii](https://github.com/alvnavraii)
 
 ## Acknowledgments 💎
 - GitHub API
