@@ -51,8 +51,6 @@ def verify_token(token):
         'Accept': 'application/vnd.github.v3+json'
     }
     response = requests.get('https://api.github.com/user', headers=headers)
-    print(f"Response status: {response.status_code}")
-    print(f"Response headers: {response.headers}")
     if response.status_code == 200:
         return True, response.json()
     return False, response.status_code
@@ -169,13 +167,31 @@ def merge_pull_request(repository_full_name, pull_request_number):
 
 @mcp.tool()
 def list_commits(repository_full_name, branch="master"):
-    global g
-    if g is None:
-        init_github_client()
-    repo = g.get_repo(repository_full_name)
-    commits = repo.get_commits(sha=branch)
-    for commit in commits:
-        print(f"Commit: {commit.sha} - {commit.commit.message}")
+    import sys
+    print("Entrando en list_commits", file=sys.stderr)
+    try:
+        global g
+        if g is None:
+            print("Inicializando GitHub client...", file=sys.stderr)
+            init_github_client()
+        print(f"Obteniendo repo {repository_full_name}", file=sys.stderr)
+        repo = g.get_repo(repository_full_name)
+        print("Obteniendo commits...", file=sys.stderr)
+        commits = repo.get_commits(sha=branch)
+        commit_list = []
+        for commit in commits:
+            commit_list.append({
+                "sha": commit.sha,
+                "message": commit.commit.message
+            })
+        print("Lista de commits obtenida", file=sys.stderr)
+        for c in commit_list:
+            print(f"- {c['sha'][:7]}: {c['message']}", file=sys.stderr)
+        print("Saliendo de list_commits", file=sys.stderr)
+        return commit_list
+    except Exception as e:
+        print(f"Error en list_commits: {e}", file=sys.stderr)
+        raise
 
 @mcp.tool()
 def create_issue(repository_full_name, title, body):
@@ -294,6 +310,8 @@ if __name__ == "__main__":
         init_github_client()
         print("Starting MCP server...", file=sys.stderr)
         mcp.run(transport="stdio")
+        # Usa el nombre completo del repositorio: usuario/repositorio
+        #list_commits("alvnavraii/MCPGithub")
     except Exception as e:
         print(f"Fatal error: {str(e)}", file=sys.stderr)
         sys.exit(1)
