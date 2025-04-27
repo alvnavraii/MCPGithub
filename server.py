@@ -239,6 +239,7 @@ def git_add(repo_path = "."):
     repo.git.add(A=True)
     print("Files added to staging area")
 
+# Improved commit function with better logging and timestamp
 @mcp.tool()
 def git_commit(message = "First Commit", repo_path = "."):
     try:
@@ -248,9 +249,9 @@ def git_commit(message = "First Commit", repo_path = "."):
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             commit_message = f"Changes in server ({current_time}): {message}"
             repo.git.commit(m=commit_message)
-            print(f"Committed: {commit_message}")
+            print(f"Successfully committed: {commit_message}")
         else:
-            print("No changes to commit")
+            print("No changes to commit. Working directory is clean.")
     except Exception as e:
         print(f"Error during commit: {str(e)}")
         raise
