@@ -3,13 +3,46 @@ from git import Repo
 import requests
 from mcp.server.fastmcp import FastMCP
 from pathlib import Path
-import json
 import sys
 from dotenv import load_dotenv
 import os
 
-# Cargar variables de entorno
-load_dotenv()
+mcp = FastMCP("GitHub Management")
+
+# Global variable for Github client
+g = None
+
+def load_environment():
+    """Load environment variables from .env file with enhanced debugging"""
+    env_path = Path(__file__).parent / '.env'
+    print(f"Looking for .env file at: {env_path}", file=sys.stderr)
+    
+    if not env_path.exists():
+        raise ValueError(f".env file not found at {env_path}")
+    
+    if not os.access(env_path, os.R_OK):
+        raise ValueError(f".env file is not readable at {env_path}")
+        
+    print(f"Found .env file, loading environment variables...", file=sys.stderr)
+    
+    # Read the file first to verify its contents
+    with open(env_path, 'r') as f:
+        env_contents = f.read().strip()
+        
+    if not env_contents:
+        raise ValueError(".env file is empty")
+    
+    # Load the environment variables
+    load_dotenv(env_path, override=True)
+    
+    # Verify that variables were loaded
+    token = os.getenv('GITHUB_TOKEN')
+    if token:
+        print(f"Successfully loaded GITHUB_TOKEN (length: {len(token)})", file=sys.stderr)
+    else:
+        raise ValueError("GITHUB_TOKEN not loaded from .env file")
+        
+    return env_path
 
 def verify_token(token):
     headers = {
@@ -25,22 +58,46 @@ def verify_token(token):
 
 def get_github_config():
     """Get GitHub configuration from environment variables."""
+    token = os.getenv('GITHUB_TOKEN')
+    if not token:
+        print("WARNING: GITHUB_TOKEN not found in environment", file=sys.stderr)
+        print("Environment variables available:", file=sys.stderr)
+        for key, value in os.environ.items():
+            if 'TOKEN' in key or 'GITHUB' in key:
+                print(f"  {key}: {'[HIDDEN]' if 'TOKEN' in key else value}", file=sys.stderr)
+    
     return {
-        'token': os.getenv('GITHUB_TOKEN'),  # Token should be in .env file
+        'token': token,
         'username': os.getenv('GITHUB_USERNAME', 'alvnavraii'),
         'defaultBranch': os.getenv('GITHUB_DEFAULT_BRANCH', 'master'),
         'repository': os.getenv('GITHUB_REPOSITORY', 'MCPGithub')
     }
 
-# Initialize MCP and GitHub client
-config = get_github_config()
-token = config['token']  # Token obtained from environment variables
-mcp = FastMCP("GitHub Management")
-g = Github(auth=Auth.Token(token))  # Using the token securely
+# Initialize MCP server
+def init_github_client():
+    """Initialize the GitHub client with proper error handling"""
+    global g
+    config = get_github_config()
+    token = config.get('token')
+    
+    if not token:
+        raise ValueError("GITHUB_TOKEN environment variable is not set")
+    
+    # Validate token before initializing Github client
+    is_valid, result = verify_token(token)
+    if not is_valid:
+        raise ValueError(f"Invalid GitHub token. Status code: {result}")
+    
+    print(f"Token valid. Authenticated as: {result.get('login')}", file=sys.stderr)
+    g = Github(auth=Auth.Token(token))
+    return g
 
 @mcp.tool()
 def list_repositories():
     try:
+        global g
+        if g is None:
+            init_github_client()
         user = g.get_user()
         repos = user.get_repos()
         repo_list = [{"name": repo.name, "private": repo.private} for repo in repos]
@@ -51,6 +108,9 @@ def list_repositories():
 @mcp.tool()
 def create_repository(repository_name, private=True):
     try:
+        global g
+        if g is None:
+            init_github_client()
         g.get_user().create_repo(repository_name, private=private)
         print(f"Repository {repository_name} created")
     except Exception as e:
@@ -59,6 +119,9 @@ def create_repository(repository_name, private=True):
 @mcp.tool()
 def delete_repository(repository_name):
     try:
+        global g
+        if g is None:
+            init_github_client()
         user = g.get_user()
         repo = user.get_repo(repository_name)
         repo.delete()
@@ -68,6 +131,9 @@ def delete_repository(repository_name):
 
 @mcp.tool()
 def create_pull_request(repository_full_name, head_branch, base_branch):
+    global g
+    if g is None:
+        init_github_client()
     repo = g.get_repo(repository_full_name)
     pull_request = repo.create_pull(
         title="Create pull request",
@@ -79,6 +145,9 @@ def create_pull_request(repository_full_name, head_branch, base_branch):
 
 @mcp.tool()
 def list_pull_requests(repository_full_name):
+    global g
+    if g is None:
+        init_github_client()
     repo = g.get_repo(repository_full_name)
     pull_requests = repo.get_pulls(state='open')
     for pr in pull_requests:
@@ -86,6 +155,9 @@ def list_pull_requests(repository_full_name):
 
 @mcp.tool()
 def merge_pull_request(repository_full_name, pull_request_number):
+    global g
+    if g is None:
+        init_github_client()
     repo = g.get_repo(repository_full_name)
     pull_request = repo.get_pull(pull_request_number)
     if pull_request.is_mergeable():
@@ -96,6 +168,9 @@ def merge_pull_request(repository_full_name, pull_request_number):
 
 @mcp.tool()
 def list_commits(repository_full_name, branch="master"):
+    global g
+    if g is None:
+        init_github_client()
     repo = g.get_repo(repository_full_name)
     commits = repo.get_commits(sha=branch)
     for commit in commits:
@@ -103,18 +178,27 @@ def list_commits(repository_full_name, branch="master"):
 
 @mcp.tool()
 def create_issue(repository_full_name, title, body):
+    global g
+    if g is None:
+        init_github_client()
     repo = g.get_repo(repository_full_name)
     issue = repo.create_issue(title=title, body=body)
     print(f"Issue created: {issue.html_url}")
 
 @mcp.tool()
 def list_branches(repository_full_name):
+    global g
+    if g is None:
+        init_github_client()
     repo = g.get_repo(repository_full_name)
     for branch in repo.get_branches():
         print(branch.name)
 
 @mcp.tool()
 def create_branch(repository_full_name, branch_name, source_branch="master"):
+    global g
+    if g is None:
+        init_github_client()
     repo = g.get_repo(repository_full_name)
     source = repo.get_branch(source_branch)
     repo.create_git_ref(ref=f"refs/heads/{branch_name}", sha=source.commit.sha)
@@ -201,13 +285,13 @@ def git_push(branch="master", repo_path=".", token=None, usuario=None, repo_name
 
 if __name__ == "__main__":
     try:
-        config = get_github_config()
-        if not config or not config.get('token'):
-            print("Error: No token found in configuration", file=sys.stderr)
-            sys.exit(1)
-            
+        # Load environment variables explicitly
+        env_path = load_environment()
+        print(f"Loading environment from: {env_path}", file=sys.stderr)
+        
+        init_github_client()
         print("Starting MCP server...", file=sys.stderr)
         mcp.run(transport="stdio")
     except Exception as e:
-        print(f"Fatal error starting server: {str(e)}", file=sys.stderr)
+        print(f"Fatal error: {str(e)}", file=sys.stderr)
         sys.exit(1)
