@@ -1,0 +1,213 @@
+from github import Github, Auth
+from git import Repo
+import requests
+from mcp.server.fastmcp import FastMCP
+from pathlib import Path
+import json
+import sys
+from dotenv import load_dotenv
+import os
+
+# Cargar variables de entorno
+load_dotenv()
+
+def verify_token(token):
+    headers = {
+        'Authorization': f'token {token}',  # Cambiado de 'Bearer' a 'token'
+        'Accept': 'application/vnd.github.v3+json'
+    }
+    response = requests.get('https://api.github.com/user', headers=headers)
+    print(f"Response status: {response.status_code}")
+    print(f"Response headers: {response.headers}")
+    if response.status_code == 200:
+        return True, response.json()
+    return False, response.status_code
+
+def get_github_config():
+    """Get GitHub configuration from environment variables."""
+    return {
+        'token': os.getenv('GITHUB_TOKEN'),  # Token should be in .env file
+        'username': os.getenv('GITHUB_USERNAME', 'alvnavraii'),
+        'defaultBranch': os.getenv('GITHUB_DEFAULT_BRANCH', 'master'),
+        'repository': os.getenv('GITHUB_REPOSITORY', 'MCPGithub')
+    }
+
+# Initialize MCP and GitHub client
+config = get_github_config()
+token = config['token']  # Token obtained from environment variables
+mcp = FastMCP("GitHub Management")
+g = Github(auth=Auth.Token(token))  # Using the token securely
+
+@mcp.tool()
+def list_repositories():
+    try:
+        user = g.get_user()
+        repos = user.get_repos()
+        repo_list = [{"name": repo.name, "private": repo.private} for repo in repos]
+        return {"result": repo_list}
+    except Exception as e:
+        return {"error": str(e)}
+
+@mcp.tool()
+def create_repository(repository_name, private=True):
+    try:
+        g.get_user().create_repo(repository_name, private=private)
+        print(f"Repository {repository_name} created")
+    except Exception as e:
+        print(f"Repository {repository_name} already exists")
+
+@mcp.tool()
+def delete_repository(repository_name):
+    try:
+        user = g.get_user()
+        repo = user.get_repo(repository_name)
+        repo.delete()
+        print(f"Repository {repository_name} deleted")
+    except Exception as e:
+        print(f"Repository {repository_name} not found or not accessible: {e}")
+
+@mcp.tool()
+def create_pull_request(repository_full_name, head_branch, base_branch):
+    repo = g.get_repo(repository_full_name)
+    pull_request = repo.create_pull(
+        title="Create pull request",
+        body="This is a pull request created by the script",
+        head=head_branch,
+        base=base_branch,
+    )
+    print(f"Pull request created: {pull_request.html_url}")
+
+@mcp.tool()
+def list_pull_requests(repository_full_name):
+    repo = g.get_repo(repository_full_name)
+    pull_requests = repo.get_pulls(state='open')
+    for pr in pull_requests:
+        print(f"PR #{pr.number}: {pr.title} - {pr.html_url}")
+
+@mcp.tool()
+def merge_pull_request(repository_full_name, pull_request_number):
+    repo = g.get_repo(repository_full_name)
+    pull_request = repo.get_pull(pull_request_number)
+    if pull_request.is_mergeable():
+        pull_request.merge()
+        print(f"Pull request #{pull_request_number} merged")
+    else:
+        print(f"Pull request #{pull_request_number} is not mergeable")
+
+@mcp.tool()
+def list_commits(repository_full_name, branch="master"):
+    repo = g.get_repo(repository_full_name)
+    commits = repo.get_commits(sha=branch)
+    for commit in commits:
+        print(f"Commit: {commit.sha} - {commit.commit.message}")
+
+@mcp.tool()
+def create_issue(repository_full_name, title, body):
+    repo = g.get_repo(repository_full_name)
+    issue = repo.create_issue(title=title, body=body)
+    print(f"Issue created: {issue.html_url}")
+
+@mcp.tool()
+def list_branches(repository_full_name):
+    repo = g.get_repo(repository_full_name)
+    for branch in repo.get_branches():
+        print(branch.name)
+
+@mcp.tool()
+def create_branch(repository_full_name, branch_name, source_branch="master"):
+    repo = g.get_repo(repository_full_name)
+    source = repo.get_branch(source_branch)
+    repo.create_git_ref(ref=f"refs/heads/{branch_name}", sha=source.commit.sha)
+    print(f"Branch {branch_name} created from {source_branch}")
+
+@mcp.tool("delete_branch")
+def force_delete_branch(repository_full_name, branch_name, token):
+    url = f"https://api.github.com/repos/{repository_full_name}/git/refs/heads/{branch_name}"
+    headers = {
+        "Authorization": f"token {token}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    response = requests.delete(url, headers=headers)
+    if response.status_code == 204:
+        print(f"Branch {branch_name} deleted via REST API")
+    else:
+        print(f"Failed to delete branch {branch_name}: {response.status_code} {response.text}")
+
+def set_remote_with_token(repo_path, token, usuario, repo_name):
+    repo = Repo(repo_path)
+    # Si tenemos token, la URL se construye solo con el token
+    if token:
+        remote_url = f"https://{token}@github.com/{usuario}/{repo_name}.git"
+    else:
+        remote_url = f"https://github.com/{usuario}/{repo_name}.git"
+        
+    if 'origin' in [remote.name for remote in repo.remotes]:
+        repo.remote('origin').set_url(remote_url)
+    else:
+        repo.create_remote('origin', remote_url)
+    # No imprimimos la URL completa para no exponer el token
+    print(f"Remote origin configurado para {usuario}/{repo_name}")
+
+@mcp.tool()
+def git_add(repo_path = "."):
+    repo = Repo(repo_path)
+    repo.git.add(A=True)
+    print("Files added to staging area")
+
+@mcp.tool()
+def git_commit(message = "First Commit", repo_path = "."):
+    try:
+        from datetime import datetime
+        repo = Repo(repo_path)
+        if repo.is_dirty(untracked_files=True):
+            current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            commit_message = f"Changes in server ({current_time}): {message}"
+            repo.git.commit(m=commit_message)
+            print(f"Committed: {commit_message}")
+        else:
+            print("No changes to commit")
+    except Exception as e:
+        print(f"Error during commit: {str(e)}")
+        raise
+
+@mcp.tool()
+def git_push(branch="master", repo_path=".", token=None, usuario=None, repo_name=None):
+    try:
+        repo = Repo(repo_path)
+        config = get_github_config()
+        
+        if not token and config:
+            token = config.get('token')
+        if not usuario and config:
+            usuario = config.get('username')
+        
+        if token and repo_name and usuario:
+            # Usar la función existente para configurar el remote con el token
+            set_remote_with_token(repo_path, token, usuario, repo_name)
+            
+            print(f"Intentando push a {repo_name}...")
+            repo.git.push('origin', branch)
+            print("Push completado exitosamente")
+            
+        else:
+            missing = []
+            if not token: missing.append("token")
+            if not usuario: missing.append("usuario")
+            if not repo_name: missing.append("nombre del repositorio")
+            raise Exception(f"Faltan parámetros requeridos: {', '.join(missing)}")
+    except Exception as e:
+        print(f"Error durante el push: {str(e)}")
+        raise
+
+if __name__ == "__main__":
+    try:
+        config = get_github_config()
+        if not config or not config.get('token'):
+            print("Error: No token found in configuration", file=sys.stderr)
+            sys.exit(1)
+            
+        print("Starting MCP server...", file=sys.stderr)
+        mcp.run(transport="stdio")
+    except Exception as e:
+        print(f"Fatal error starting server: {str(e)}", file=sys.stderr)
+        sys.exit(1)
