@@ -111,10 +111,16 @@ def create_repository(repository_name, private=True):
         global g
         if g is None:
             init_github_client()
-        g.get_user().create_repo(repository_name, private=private)
-        print(f"Repository {repository_name} created")
+        repo = g.get_user().create_repo(repository_name, private=private)
+        return {
+            "result": {
+                "name": repo.name,
+                "private": repo.private,
+                "url": repo.html_url
+            }
+        }
     except Exception as e:
-        print(f"Repository {repository_name} already exists")
+        return {"error": str(e)}
 
 @mcp.tool()
 def delete_repository(repository_name):
@@ -125,56 +131,90 @@ def delete_repository(repository_name):
         user = g.get_user()
         repo = user.get_repo(repository_name)
         repo.delete()
-        print(f"Repository {repository_name} deleted")
+        return {"result": {"message": f"Repository {repository_name} deleted successfully"}}
     except Exception as e:
-        print(f"Repository {repository_name} not found or not accessible: {e}")
+        return {"error": str(e)}
 
 @mcp.tool()
 def create_pull_request(repository_full_name, head_branch, base_branch):
-    global g
-    if g is None:
-        init_github_client()
-    repo = g.get_repo(repository_full_name)
-    pull_request = repo.create_pull(
-        title="Create pull request",
-        body="This is a pull request created by the script",
-        head=head_branch,
-        base=base_branch,
-    )
-    print(f"Pull request created: {pull_request.html_url}")
+    try:
+        global g
+        if g is None:
+            init_github_client()
+        repo = g.get_repo(repository_full_name)
+        pull_request = repo.create_pull(
+            title="Create pull request",
+            body="This is a pull request created by the script",
+            head=head_branch,
+            base=base_branch,
+        )
+        return {
+            "result": {
+                "number": pull_request.number,
+                "title": pull_request.title,
+                "url": pull_request.html_url
+            }
+        }
+    except Exception as e:
+        return {"error": str(e)}
 
 @mcp.tool()
 def list_pull_requests(repository_full_name):
-    global g
-    if g is None:
-        init_github_client()
-    repo = g.get_repo(repository_full_name)
-    pull_requests = repo.get_pulls(state='open')
-    for pr in pull_requests:
-        print(f"PR #{pr.number}: {pr.title} - {pr.html_url}")
+    try:
+        global g
+        if g is None:
+            init_github_client()
+        repo = g.get_repo(repository_full_name)
+        pull_requests = repo.get_pulls(state='open')
+        pr_list = [{
+            "number": pr.number,
+            "title": pr.title,
+            "url": pr.html_url,
+            "state": pr.state
+        } for pr in pull_requests]
+        return {"result": pr_list}
+    except Exception as e:
+        return {"error": str(e)}
 
 @mcp.tool()
 def merge_pull_request(repository_full_name, pull_request_number):
-    global g
-    if g is None:
-        init_github_client()
-    repo = g.get_repo(repository_full_name)
-    pull_request = repo.get_pull(pull_request_number)
-    if pull_request.is_mergeable():
-        pull_request.merge()
-        print(f"Pull request #{pull_request_number} merged")
-    else:
-        print(f"Pull request #{pull_request_number} is not mergeable")
+    try:
+        global g
+        if g is None:
+            init_github_client()
+        repo = g.get_repo(repository_full_name)
+        pull_request = repo.get_pull(pull_request_number)
+        if pull_request.is_mergeable():
+            result = pull_request.merge()
+            return {
+                "result": {
+                    "message": f"Pull request #{pull_request_number} merged successfully",
+                    "sha": result.sha
+                }
+            }
+        else:
+            return {"error": f"Pull request #{pull_request_number} is not mergeable"}
+    except Exception as e:
+        return {"error": str(e)}
 
 @mcp.tool()
 def list_commits(repository_full_name, branch="master"):
-    global g
-    if g is None:
-        init_github_client()
-    repo = g.get_repo(repository_full_name)
-    commits = repo.get_commits(sha=branch)
-    for commit in commits:
-        print(f"Commit: {commit.sha} - {commit.commit.message}")
+    try:
+        global g
+        if g is None:
+            init_github_client()
+        repo = g.get_repo(repository_full_name)
+        commits = repo.get_commits(sha=branch)
+        commit_list = [{
+            "sha": commit.sha,
+            "message": commit.commit.message,
+            "author": commit.commit.author.name,
+            "date": commit.commit.author.date.isoformat(),
+            "url": commit.html_url
+        } for commit in commits]
+        return {"result": commit_list}
+    except Exception as e:
+        return {"error": str(e)}
 
 @mcp.tool()
 def create_issue(repository_full_name, title, body):
@@ -183,39 +223,53 @@ def create_issue(repository_full_name, title, body):
         init_github_client()
     repo = g.get_repo(repository_full_name)
     issue = repo.create_issue(title=title, body=body)
-    print(f"Issue created: {issue.html_url}")
+    return {
+        "result": {
+            "title": issue.title,
+            "url": issue.html_url
+        }
+    }
 
 @mcp.tool()
 def list_branches(repository_full_name):
-    global g
-    if g is None:
-        init_github_client()
-    repo = g.get_repo(repository_full_name)
-    for branch in repo.get_branches():
-        print(branch.name)
+    try:
+        global g
+        if g is None:
+            init_github_client()
+        repo = g.get_repo(repository_full_name)
+        branches = [{"name": branch.name} for branch in repo.get_branches()]
+        return {"result": branches}
+    except Exception as e:
+        return {"error": str(e)}
 
 @mcp.tool()
 def create_branch(repository_full_name, branch_name, source_branch="master"):
-    global g
-    if g is None:
-        init_github_client()
-    repo = g.get_repo(repository_full_name)
-    source = repo.get_branch(source_branch)
-    repo.create_git_ref(ref=f"refs/heads/{branch_name}", sha=source.commit.sha)
-    print(f"Branch {branch_name} created from {source_branch}")
+    try:
+        global g
+        if g is None:
+            init_github_client()
+        repo = g.get_repo(repository_full_name)
+        source = repo.get_branch(source_branch)
+        repo.create_git_ref(ref=f"refs/heads/{branch_name}", sha=source.commit.sha)
+        return {"result": {"message": f"Branch {branch_name} created from {source_branch}"}}
+    except Exception as e:
+        return {"error": str(e)}
 
 @mcp.tool("delete_branch")
 def force_delete_branch(repository_full_name, branch_name, token):
-    url = f"https://api.github.com/repos/{repository_full_name}/git/refs/heads/{branch_name}"
-    headers = {
-        "Authorization": f"token {token}",
-        "Accept": "application/vnd.github.v3+json"
-    }
-    response = requests.delete(url, headers=headers)
-    if response.status_code == 204:
-        print(f"Branch {branch_name} deleted via REST API")
-    else:
-        print(f"Failed to delete branch {branch_name}: {response.status_code} {response.text}")
+    try:
+        url = f"https://api.github.com/repos/{repository_full_name}/git/refs/heads/{branch_name}"
+        headers = {
+            "Authorization": f"token {token}",
+            "Accept": "application/vnd.github.v3+json"
+        }
+        response = requests.delete(url, headers=headers)
+        if response.status_code == 204:
+            return {"result": {"message": f"Branch {branch_name} deleted via REST API"}}
+        else:
+            return {"error": f"Failed to delete branch {branch_name}: {response.status_code} {response.text}"}
+    except Exception as e:
+        return {"error": str(e)}
 
 def set_remote_with_token(repo_path, token, usuario, repo_name):
     repo = Repo(repo_path)
@@ -234,9 +288,12 @@ def set_remote_with_token(repo_path, token, usuario, repo_name):
 
 @mcp.tool()
 def git_add(repo_path = "."):
-    repo = Repo(repo_path)
-    repo.git.add(A=True)
-    print("Files added to staging area")
+    try:
+        repo = Repo(repo_path)
+        repo.git.add(A=True)
+        return {"result": {"message": "Files added to staging area"}}
+    except Exception as e:
+        return {"error": str(e)}
 
 @mcp.tool()
 def git_commit(message = "First Commit", repo_path = "."):
@@ -247,12 +304,11 @@ def git_commit(message = "First Commit", repo_path = "."):
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             commit_message = f"Changes in server ({current_time}): {message}"
             repo.git.commit(m=commit_message)
-            print(f"Committed: {commit_message}")
+            return {"result": {"message": f"Committed: {commit_message}"}}
         else:
-            print("No changes to commit")
+            return {"error": "No changes to commit"}
     except Exception as e:
-        print(f"Error during commit: {str(e)}")
-        raise
+        return {"error": str(e)}
 
 @mcp.tool()
 def git_push(branch="master", repo_path=".", token=None, usuario=None, repo_name=None):
@@ -271,17 +327,15 @@ def git_push(branch="master", repo_path=".", token=None, usuario=None, repo_name
             
             print(f"Intentando push a {repo_name}...")
             repo.git.push('origin', branch)
-            print("Push completado exitosamente")
-            
+            return {"result": {"message": "Push completado exitosamente"}}
         else:
             missing = []
             if not token: missing.append("token")
             if not usuario: missing.append("usuario")
             if not repo_name: missing.append("nombre del repositorio")
-            raise Exception(f"Faltan parámetros requeridos: {', '.join(missing)}")
+            return {"error": f"Faltan parámetros requeridos: {', '.join(missing)}"}
     except Exception as e:
-        print(f"Error durante el push: {str(e)}")
-        raise
+        return {"error": str(e)}
 
 if __name__ == "__main__":
     try:
