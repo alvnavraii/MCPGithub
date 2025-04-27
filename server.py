@@ -92,6 +92,30 @@ def init_github_client():
     g = Github(auth=Auth.Token(token))
     return g
 
+def get_repository(repository_full_name=None):
+    """
+    Get a GitHub repository.
+    If no repository_full_name is provided, use the default from environment variables.
+    Format for repository_full_name: "username/repository"
+    """
+    try:
+        global g
+        if g is None:
+            init_github_client()
+            
+        # Si no se proporciona un repositorio, usar el de la configuración por defecto
+        if not repository_full_name:
+            config = get_github_config()
+            username = config.get('username')
+            repository = config.get('repository')
+            repository_full_name = f"{username}/{repository}"
+            
+        # Obtener el repositorio especificado
+        repo = g.get_repo(repository_full_name)
+        return repo, None
+    except Exception as e:
+        return None, str(e)
+
 @mcp.tool()
 def list_repositories():
     try:
@@ -123,15 +147,38 @@ def create_repository(repository_name, private=True):
         return {"error": str(e)}
 
 @mcp.tool()
-def delete_repository(repository_name):
+def delete_repository(repository_name=None, repository_full_name=None):
+    """
+    Delete a GitHub repository.
+    
+    Args:
+        repository_name: Name of the repository (without username)
+        repository_full_name: Full name of the repository (username/repo)
+    """
     try:
         global g
         if g is None:
             init_github_client()
-        user = g.get_user()
-        repo = user.get_repo(repository_name)
-        repo.delete()
-        return {"result": {"message": f"Repository {repository_name} deleted successfully"}}
+            
+        # Si se proporciona repository_full_name, usarlo directamente
+        if repository_full_name:
+            repo, error = get_repository(repository_full_name)
+            if error:
+                return {"error": error}
+            repo.delete()
+            return {"result": {"message": f"Repository {repository_full_name} deleted successfully"}}
+        
+        # Si no hay repository_full_name pero hay repository_name, usar el usuario por defecto
+        elif repository_name:
+            config = get_github_config()
+            username = config.get('username')
+            repo, error = get_repository(f"{username}/{repository_name}")
+            if error:
+                return {"error": error}
+            repo.delete()
+            return {"result": {"message": f"Repository {repository_name} deleted successfully"}}
+        else:
+            return {"error": "Either repository_name or repository_full_name must be provided"}
     except Exception as e:
         return {"error": str(e)}
 
@@ -218,17 +265,21 @@ def list_commits(repository_full_name, branch="master"):
 
 @mcp.tool()
 def create_issue(repository_full_name, title, body):
-    global g
-    if g is None:
-        init_github_client()
-    repo = g.get_repo(repository_full_name)
-    issue = repo.create_issue(title=title, body=body)
-    return {
-        "result": {
-            "title": issue.title,
-            "url": issue.html_url
+    try:
+        global g
+        if g is None:
+            init_github_client()
+        repo = g.get_repo(repository_full_name)
+        issue = repo.create_issue(title=title, body=body)
+        return {
+            "result": {
+                "number": issue.number,
+                "title": issue.title,
+                "url": issue.html_url
+            }
         }
-    }
+    except Exception as e:
+        return {"error": str(e)}
 
 @mcp.tool()
 def list_branches(repository_full_name):
@@ -268,6 +319,41 @@ def force_delete_branch(repository_full_name, branch_name, token):
             return {"result": {"message": f"Branch {branch_name} deleted via REST API"}}
         else:
             return {"error": f"Failed to delete branch {branch_name}: {response.status_code} {response.text}"}
+    except Exception as e:
+        return {"error": str(e)}
+
+@mcp.tool()
+def get_repository_info(repository_full_name):
+    """
+    Get information about a specific GitHub repository.
+    
+    Args:
+        repository_full_name: Full name of the repository in format 'username/repository'
+    
+    Returns:
+        Information about the repository including name, owner, description, etc.
+    """
+    try:
+        repo, error = get_repository(repository_full_name)
+        if error:
+            return {"error": error}
+            
+        return {
+            "result": {
+                "name": repo.name,
+                "full_name": repo.full_name,
+                "owner": repo.owner.login,
+                "description": repo.description,
+                "html_url": repo.html_url,
+                "default_branch": repo.default_branch,
+                "private": repo.private,
+                "created_at": repo.created_at.isoformat() if repo.created_at else None,
+                "updated_at": repo.updated_at.isoformat() if repo.updated_at else None,
+                "stars": repo.stargazers_count,
+                "forks": repo.forks_count,
+                "language": repo.language
+            }
+        }
     except Exception as e:
         return {"error": str(e)}
 
@@ -311,23 +397,51 @@ def git_commit(message = "First Commit", repo_path = "."):
         return {"error": str(e)}
 
 @mcp.tool()
-def git_push(branch="master", repo_path=".", token=None, usuario=None, repo_name=None):
+def git_push(branch="master", repo_path=".", token=None, usuario=None, repo_name=None, repository_full_name=None):
+    """
+    Push changes to a remote repository.
+    
+    Args:
+        branch: The branch to push to.
+        repo_path: Local path to the repository.
+        token: GitHub token for authentication. If not provided, uses the one from the environment.
+        usuario: GitHub username. If not provided, uses the one from the environment.
+        repo_name: Repository name. If not provided, uses the one from the environment.
+        repository_full_name: Full repository name in the format "username/repo". If provided, overrides usuario and repo_name.
+    """
     try:
         repo = Repo(repo_path)
         config = get_github_config()
         
         if not token and config:
             token = config.get('token')
-        if not usuario and config:
-            usuario = config.get('username')
+            
+        # Si se proporciona repository_full_name, extraer usuario y nombre del repo
+        if repository_full_name:
+            parts = repository_full_name.split('/')
+            if len(parts) == 2:
+                usuario = parts[0]
+                repo_name = parts[1]
+            else:
+                return {"error": "Invalid repository_full_name format. Should be 'username/repository'"}
+        else:
+            if not usuario and config:
+                usuario = config.get('username')
+            if not repo_name and config:
+                repo_name = config.get('repository')
         
         if token and repo_name and usuario:
             # Usar la función existente para configurar el remote con el token
             set_remote_with_token(repo_path, token, usuario, repo_name)
             
-            print(f"Intentando push a {repo_name}...")
             repo.git.push('origin', branch)
-            return {"result": {"message": "Push completado exitosamente"}}
+            return {
+                "result": {
+                    "message": "Push completado exitosamente",
+                    "repository": f"{usuario}/{repo_name}",
+                    "branch": branch
+                }
+            }
         else:
             missing = []
             if not token: missing.append("token")
